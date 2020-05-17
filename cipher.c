@@ -6,27 +6,37 @@
 #include <signal.h>
 #include <pthread.h>
 
-#define SIZE 15
+#define SIZE 1000
 int to_child_fd[2];
 int to_parent_fd[2];
-    char message[SIZE];
+int fd[9][2];
+int backToMain[2];
+int i = 0;
+int shiftCount = 0;
+int shiftList[SIZE] = {};
 
+pthread_mutex_t lock = PTHREAD_MUTEX_INITIALIZER;
 
 void * doWork(void * arg){
 
+    int numShift = *((int*) arg);
 	char message[SIZE];
+	char phrase[SIZE];
 	int result;
-	int shiftLength = *((int *) arg);
+	int shiftLength = shiftList[i];		
 	int ch;
 	char sentences[SIZE];
+	pipe(backToMain);
 
-	read(to_parent_fd[0], message, SIZE);
+	pthread_mutex_lock(&lock);
 
-	int msgSize = strlen(message);
+	read(fd[i][0], sentences, SIZE);
+
+	int msgSize = strlen(sentences);
 
 	for(int i = 0; i < msgSize; i++){
 
-		ch = message[i];
+		ch = sentences[i];
 
 		if(ch >= 'a' && ch <= 'z'){
 			ch = ch + shiftLength;
@@ -45,64 +55,73 @@ void * doWork(void * arg){
 		}		
 		sentences[i] = ch;
 	}
-	for(int i =  0; i < msgSize; i++){
-		printf("%c", sentences[i]);
+	i++;
+
+	if(numShift == i){
+		write(backToMain[1], sentences, SIZE);
+	}else{
+		sleep(3);
+		write(fd[i][1], sentences, SIZE);
 	}
-	printf("\n");
-	write(to_parent_fd[1], sentences,  100);
+
+	pthread_mutex_unlock(&lock);
 }
 
 int main(int argc, char * argv[]){
     
-    int shiftList[] = {};
     int value;
     int counter = 0;
     int cores = 0;
 
     for(int i = 1; i < argc; i++){
 
+    	cores++;
     	shiftList[counter] = atoi(argv[i]);
     	counter++;
     }
+    if(cores > 1000){
+    	printf("%s\n", "There is a limit of 1000 ciphers, please try again...");
+    	return EXIT_FAILURE;
+    }
     int *currentShift = malloc(sizeof(*currentShift));
     *currentShift = shiftList[0];
-
 	pipe(to_child_fd);
     pipe(to_parent_fd);
-    if (fork() == 0) {
+    int i = 0;
+    int *coreHolder = malloc(sizeof(*coreHolder));
+    *coreHolder = cores;
+    printf("%s %d\n", "cores:", cores);
+    for(int i = 0; i < SIZE; i++){
+
+    	pipe(fd[i]);
+    	//note: fd[i][0] is read end fd[i][1] is the write end 
+    }
+    int j = 0;
+    int count = 0;
     int length;
-
-    close(to_child_fd[1]);  /* child closes write side of child  pipe */
-    close(to_parent_fd[0]); /* child closes read  side of parent pipe */
-    length = read(to_child_fd[0], message, SIZE);
-    
-    write(to_parent_fd[1], message, strlen(message) + 1);
-    close(to_parent_fd[1]);
-    } else {
-
     char phrase[SIZE];
     char message[SIZE];
-    printf("please type a sentence : ");
-    scanf("%s", phrase);
-    close(to_parent_fd[1]); /* parent closes write side of parent pipe */
-    close(to_child_fd[0]);  /* parent closes read  side of child  pipe */
-    write(to_child_fd[1], phrase, strlen(phrase) + 1);
-    //close(to_child_fd[1]);
-    //read(to_parent_fd[0], message, SIZE);
 
-    pthread_t tid[1];
+    printf("%s", "Please type a sentence: ");
+    fgets(phrase, 1000, stdin);
+    pthread_t tid[cores];
 
+    write(fd[i][1], phrase, SIZE); //strlen(phrase) + 1);
 
-    pthread_create(&tid[0], NULL, &doWork, currentShift);
-    //sleep(10);
-    pthread_join(tid[0], NULL);
+    for(int i = 0; i < cores; i++){
 
-    //pthread_create(&tid[1], NULL, &doWork, NULL);
-
-
-
-    //pthread_join(tid[1], NULL);
-
+    	pthread_create(&tid[i], NULL, &doWork, coreHolder);
+    	j++;
+    	sleep(2);
     }
+    //Esleep(3);
+
+    for(int i = 0; i < cores; i++){
+    	pthread_join(tid[i], NULL);
+    }
+    char encryptedSentence[SIZE];
+    read(backToMain[0], encryptedSentence, SIZE);
+
+    printf("%s %s", "Your encrypted sentence is:", encryptedSentence);
     return 0;
 }

@@ -11,7 +11,7 @@ int to_child_fd[2];
 int to_parent_fd[2];
 int fd[9][2];
 int backToMain[2];
-int i = 0;
+int globalI = 0;
 int shiftCount = 0;
 int shiftList[SIZE] = {};
 
@@ -23,14 +23,14 @@ void * doWork(void * arg){
 	char message[SIZE];
 	char phrase[SIZE];
 	int result;
-	int shiftLength = shiftList[i];		
+	int shiftLength = shiftList[globalI];		
 	int ch;
 	char sentences[SIZE];
 	pipe(backToMain);
 
 	pthread_mutex_lock(&lock);
 
-	read(fd[i][0], sentences, SIZE);
+	read(fd[globalI][0], sentences, SIZE);
 
 	int msgSize = strlen(sentences);
 
@@ -55,13 +55,13 @@ void * doWork(void * arg){
 		}		
 		sentences[i] = ch;
 	}
-	i++;
+	globalI++;
 
-	if(numShift == i){
+	if(numShift == globalI){
 		write(backToMain[1], sentences, SIZE);
 	}else{
-		sleep(3);
-		write(fd[i][1], sentences, SIZE);
+		sleep(1);
+		write(fd[globalI][1], sentences, SIZE);
 	}
 
 	pthread_mutex_unlock(&lock);
@@ -72,8 +72,9 @@ int main(int argc, char * argv[]){
     int value;
     int counter = 0;
     int cores = 0;
+    int i;
 
-    for(int i = 1; i < argc; i++){
+    for(i = 1; i < argc; i++){
 
     	cores++;
     	shiftList[counter] = atoi(argv[i]);
@@ -87,11 +88,9 @@ int main(int argc, char * argv[]){
     *currentShift = shiftList[0];
 	pipe(to_child_fd);
     pipe(to_parent_fd);
-    int i = 0;
     int *coreHolder = malloc(sizeof(*coreHolder));
     *coreHolder = cores;
-    printf("%s %d\n", "cores:", cores);
-    for(int i = 0; i < SIZE; i++){
+    for(i = 0; i < SIZE; i++){
 
     	pipe(fd[i]);
     	//note: fd[i][0] is read end fd[i][1] is the write end 
@@ -106,17 +105,15 @@ int main(int argc, char * argv[]){
     fgets(phrase, 1000, stdin);
     pthread_t tid[cores];
 
-    write(fd[i][1], phrase, SIZE); //strlen(phrase) + 1);
+    write(fd[globalI][1], phrase, SIZE); 
 
-    for(int i = 0; i < cores; i++){
+    for(i = 0; i < cores; i++){
 
     	pthread_create(&tid[i], NULL, &doWork, coreHolder);
     	j++;
     	sleep(2);
     }
-    //Esleep(3);
-
-    for(int i = 0; i < cores; i++){
+    for(i = 0; i < cores; i++){
     	pthread_join(tid[i], NULL);
     }
     char encryptedSentence[SIZE];
